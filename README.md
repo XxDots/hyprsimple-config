@@ -59,23 +59,34 @@ The following files are personal overrides that differ from upstream defaults:
 
 ### SDDM Dynamic Theme
 
-This repository includes a **dynamic SDDM theme** that automatically synchronizes with the active Hyprsimple theme.
+This repository includes a **dynamic SDDM theme** that automatically synchronizes with the active Hyprsimple theme. The implementation is hardened for security and reliability.
 
 **Files:**
 - `sddm/Main.qml` — Login screen template (generated at runtime with active theme colors)
 - `sddm/theme.conf` — Theme metadata
 - `sddm/background.jpg` — Wallpaper placeholder (replaced with active wallpaper at runtime)
 - `sddm/99-hyprsimple-theme.conf` — SDDM config drop-in for `/etc/sddm.conf.d/`
-- `scripts/sddm-theme-sync.sh` — Synchronization script (reads active colors & wallpaper, generates SDDM theme)
-- `systemd/sddm-theme-sync.service` — Systemd service to run sync
-- `systemd/sddm-theme-sync.path` — Systemd path unit to auto-trigger sync on theme/wallpaper change
+- `scripts/sddm-theme-sync-root.sh` — **Root-owned** synchronization helper (installed to `/usr/local/bin/sddm-theme-sync`)
+- `systemd/sddm-theme-sync@.service` — **System-level** boot-time oneshot service (runs before SDDM)
+- `systemd/sddm-theme-sync.service` — User-level service for runtime sync (triggered by path unit)
+- `systemd/sddm-theme-sync.path` — User-level path unit watching correct source files
 
 **How it works:**
 1. Active theme colors are read from `~/.config/quickshell/theme-active.json` (updated by `theme-switcher.sh`)
 2. Active wallpaper is read from `~/.cache/current_wallpaper` (updated by `theme-switcher.sh` and `wallpaper-switcher.sh`)
-3. `sddm-theme-sync.sh` generates `/usr/share/sddm/themes/hyprsimple/Main.qml` with the active colors and copies the wallpaper
-4. A systemd path unit watches for changes to the colors file and wallpaper, triggering the sync automatically
-5. No manual intervention needed — SDDM updates when you switch themes or wallpapers in Hyprland
+3. **Boot-time:** System service `sddm-theme-sync@<user>.service` runs before `sddm.service`, syncing latest theme
+4. **Runtime:** User path unit watches `theme-active.json` and `current_wallpaper*`, triggers user service
+5. User service calls root-owned helper `/usr/local/bin/sddm-theme-sync` via passwordless sudo
+6. Helper validates all inputs (JSON syntax, color format, wallpaper path/type), generates SDDM theme atomically
+7. No manual intervention needed — SDDM updates when you switch themes or wallpapers in Hyprland
+
+**Security hardening:**
+- Sync script owned by `root:root`, mode `0755`, installed at `/usr/local/bin/sddm-theme-sync`
+- User cannot modify the executable — eliminates privilege escalation via sudoers
+- Sudoers rule restricted to single executable: `user ALL=(ALL) NOPASSWD: /usr/local/bin/sddm-theme-sync`
+- All user-controlled inputs validated: JSON syntax, `#RRGGBB` color format, wallpaper file type & path
+- Atomic writes using temporary files + `mv -f` — no partial/corrupted output
+- Wallpaper symlinks rejected; path traversal prevented via realpath validation
 
 **Colors (dynamic, from active theme):**
 - Background, Surface, Foreground, Accent, Accent Dim, Secondary, Success, Warning, Danger, Muted, Border
@@ -85,7 +96,7 @@ This repository includes a **dynamic SDDM theme** that automatically synchronize
 - Compact centered login card matching reference design
 - Username/password fields with focus highlighting (accent color)
 - Session selector and keyboard layout dropdown
-- Login (accent), Shutdown (danger), Reboot (warning) buttons
+- Login (accent), Shutdown (danger), Reboot (warning) buttons — pressed states use accent_dim
 - Clock with date at top-right
 - Dark semi-transparent overlay on wallpaper for readability
 - Lightweight, no Hyprland/Quickshell dependencies
@@ -118,6 +129,7 @@ Ensure these are installed before restoring:
 - `Muslimtify` plugin (optional, for prayer times panel)
 - `sddm` (for login theme)
 - `jq` (for parsing JSON in sync script)
+- `file` (for wallpaper MIME type validation)
 
 ## Restore Procedure
 
@@ -156,21 +168,31 @@ Ensure these are installed before restoring:
    sudo cp -r ~/hyprsimple-config-backup/sddm /usr/share/sddm/themes/hyprsimple
    sudo cp ~/hyprsimple-config-backup/sddm/99-hyprsimple-theme.conf /etc/sddm.conf.d/
    
-   # Install sync script
-   sudo cp ~/hyprsimple-config-backup/scripts/sddm-theme-sync.sh /usr/local/bin/
-   sudo chmod +x /usr/local/bin/sddm-theme-sync.sh
+   # Install root-owned sync helper
+   sudo cp ~/hyprsimple-config-backup/scripts/sddm-theme-sync-root.sh /usr/local/bin/sddm-theme-sync
+   sudo chown root:root /usr/local/bin/sddm-theme-sync
+   sudo chmod 755 /usr/local/bin/sddm-theme-sync
    
-   # Configure passwordless sudo for sync script (required for auto-sync)
-   echo "$USER ALL=(ALL) NOPASSWD: /usr/local/bin/sddm-theme-sync.sh" | sudo tee /etc/sudoers.d/sddm-theme-sync
+   # Configure passwordless sudo for sync helper (restricted to this executable only)
+   echo "$USER ALL=(ALL) NOPASSWD: /usr/local/bin/sddm-theme-sync" | sudo tee /etc/sudoers.d/sddm-theme-sync
    
-   # Install and enable systemd user units for auto-sync
+   # Install and enable systemd units
+   # System-level boot-time service (runs before SDDM)
+   sudo cp ~/hyprsimple-config-backup/systemd/sddm-theme-sync@.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable sddm-theme-sync@$USER.service
+   
+   # User-level runtime sync (watches for theme/wallpaper changes)
    cp ~/hyprsimple-config-backup/systemd/sddm-theme-sync.service ~/.config/systemd/user/
    cp ~/hyprsimple-config-backup/systemd/sddm-theme-sync.path ~/.config/systemd/user/
    systemctl --user daemon-reload
    systemctl --user enable --now sddm-theme-sync.path
    
+   # Enable user lingering so runtime sync works after logout
+   loginctl enable-linger $USER
+   
    # Initial sync
-   sudo /usr/local/bin/sddm-theme-sync.sh
+   sudo /usr/local/bin/sddm-theme-sync
    ```
 
 6. **Enable Muslimtify plugin** (if desired):
@@ -190,7 +212,9 @@ Ensure these are installed before restoring:
 - Do NOT clone this repository into `~/.local/share/hyprsimple`. Keep upstream and personal config separate.
 - SDDM theme requires root to install to `/usr/share/sddm/themes/`. The config drop-in goes to `/etc/sddm.conf.d/`.
 - A logout or reboot is required to see the new SDDM login screen.
-- **Dynamic SDDM theme:** Requires `jq` package and passwordless sudo for `/usr/local/bin/sddm-theme-sync.sh`. The systemd path unit watches `~/.config/quickshell/theme-active.json` and `~/.cache/current_wallpaper` for changes.
+- **Dynamic SDDM theme:** Requires `jq` and `file` packages. Root-owned sync helper at `/usr/local/bin/sddm-theme-sync` (mode 0755, root:root). Sudoers rule restricted to this executable only.
+- System-level boot service `sddm-theme-sync@<user>.service` runs before `sddm.service` — ensures first login screen uses latest theme.
+- User-level path unit watches `~/.config/quickshell/theme-active.json` and `~/.cache/current_wallpaper*` — requires `loginctl enable-linger <user>` for post-logout sync.
 - The generated `Main.qml` in `/usr/share/sddm/themes/hyprsimple/` is overwritten on every theme/wallpaper change — do not edit it directly.
 
 ## Updating Hyprsimple

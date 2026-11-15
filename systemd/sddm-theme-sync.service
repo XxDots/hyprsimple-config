@@ -1,7 +1,15 @@
 [Unit]
 Description=Sync SDDM theme with Hyprsimple
+Documentation=man:sddm-theme-sync(1)
+DefaultDependencies=no
 After=graphical-session.target
 
 [Service]
 Type=oneshot
-ExecStart=sudo /home/oreo/.local/bin/sddm-theme-sync.sh
+ExecStart=sudo /usr/local/bin/sddm-theme-sync
+StandardOutput=journal
+StandardError=journal
+TimeoutSec=30
+
+[Install]
+WantedBy=default.target

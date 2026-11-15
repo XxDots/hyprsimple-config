@@ -1,0 +1,20 @@
+[Unit]
+Description=Sync SDDM theme with Hyprsimple for user %i
+Documentation=man:sddm-theme-sync(1)
+DefaultDependencies=no
+After=local-fs.target systemd-user-sessions.service
+Before=sddm.service
+Wants=systemd-user-sessions.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/sddm-theme-sync %i
+User=root
+Group=root
+StandardOutput=journal
+StandardError=journal
+# Timeout in case of issues
+TimeoutSec=30
+
+[Install]
+WantedBy=sddm.service
