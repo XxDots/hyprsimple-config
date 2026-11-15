@@ -1,27 +1,28 @@
-# Japanese Crimson — Derived from japan-artistic-3840x2160-25406.jpg
-# Desktop UI accent uses brighter crimson for contrast; terminal preserves true crimson for red.
-# ANSI semantic hues preserved: green, yellow, blue, magenta, cyan distinct from red.
+# Japanese Crimson (Refined) — Dark crimson palette with neutral surfaces
+# Background: #080808 (true black)
+# Accent: #d9373d (crimson red)
+# ANSI magenta made reddish to avoid purple leakage into UI
 
 accent = "#d9373d"
 cursor = "#fefefe"
 foreground = "#fefefe"
-background = "#071019"
-selection_foreground = "#071019"
+background = "#080808"
+selection_foreground = "#080808"
 selection_background = "#d9373d"
 
-color0 = "#0a131c"
+color0 = "#101010"
 color1 = "#aa0003"
 color2 = "#6a9955"
 color3 = "#d4a72c"
 color4 = "#5a7fff"
-color5 = "#c47fff"
+color5 = "#b44444"
 color6 = "#4fdfff"
 color7 = "#fefefe"
-color8 = "#948d8a"
+color8 = "#888888"
 color9 = "#d9373d"
 color10 = "#8bd5a8"
 color11 = "#f2c47e"
 color12 = "#8faaff"
-color13 = "#d4aaff"
+color13 = "#d48888"
 color14 = "#8fefff"
 color15 = "#fefefe"
