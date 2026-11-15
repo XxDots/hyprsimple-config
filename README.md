@@ -25,6 +25,7 @@ This backup contains only user-owned configuration overrides and custom scripts.
 | `hyprsimple/` | `~/.config/hyprsimple/` | Plugin configuration |
 | `scripts/` | `~/.local/bin/` (custom only) | Personal helper scripts |
 | `starship.toml` | `~/.config/starship.toml` | Starship prompt configuration |
+| `sddm/` | `/usr/share/sddm/themes/hyprsimple/` | SDDM login theme (system-wide) |
 
 ## Personal Customizations
 
@@ -56,6 +57,30 @@ The following files are personal overrides that differ from upstream defaults:
 - `starship.toml` — Catppuccin Mocha palette, extensive modules
 - `scripts/*` — 9 custom scripts (clipboard, power menu, waybar toggle, wallpaper, search, CPU toggle)
 
+### SDDM Theme
+
+- `sddm/Main.qml` — Minimal login screen matching Hyprsimple palette
+- `sddm/theme.conf` — Theme metadata
+- `sddm/background.jpg` — Wallpaper (from hyprsimple backgrounds)
+- `sddm/99-hyprsimple-theme.conf` — SDDM config drop-in
+
+Colors:
+- Background: `#0B0F19` (with 60% overlay)
+- Accent: `#38BDF8` (primary button, focus borders)
+- Foreground: `#D8D9F7` (text, clock)
+- Surface: `#1E2437` (input fields, panel background)
+- Error/Danger: `#F27A9B` (shutdown button, errors)
+- Warning: `#F2C47E` (reboot button)
+- Muted: `#5C6589` (borders, placeholder text)
+
+Features:
+- Dark semi-transparent panel centered on screen
+- Username/password fields with focus highlighting
+- Session selector and keyboard layout dropdown
+- Login/Shutdown/Reboot buttons with accent colors
+- Clock with date at top-right
+- Lightweight, no Hyprland/Quickshell dependencies
+
 ## Generated Files (Regenerated on Theme Switch)
 
 These files are **not** in this backup and will be recreated automatically:
@@ -81,6 +106,7 @@ Ensure these are installed before restoring:
 - `nautilus` (file manager), `firefox` (browser)
 - `uwsm`, `gsettings`, `hyprctl`
 - `Muslimtify` plugin (optional, for prayer times panel)
+- `sddm` (for login theme)
 
 ## Restore Procedure
 
@@ -113,7 +139,13 @@ Ensure these are installed before restoring:
    theme-switcher.sh hyprsimple
    ```
 
-5. **Enable Muslimtify plugin** (if desired):
+5. **Install SDDM theme** (optional, requires root):
+   ```bash
+   sudo cp -r ~/hyprsimple-config-backup/sddm /usr/share/sddm/themes/hyprsimple
+   sudo cp ~/hyprsimple-config-backup/sddm/99-hyprsimple-theme.conf /etc/sddm.conf.d/
+   ```
+
+6. **Enable Muslimtify plugin** (if desired):
    ```bash
    hyprsimple-plugin enable muslimtify
    ```
@@ -128,6 +160,8 @@ Ensure these are installed before restoring:
 - `hypr/hyprpaper.conf` references `/home/oreo/.cache/current_wallpaper`. Verify the path matches your `$HOME` after restore. The `theme-switcher.sh` will update this when a theme is applied.
 - The `muslimtify` plugin stores location data in `~/.config/muslimtify/config.json` (excluded from this backup). Reconfigure location after restore if using the plugin.
 - Do NOT clone this repository into `~/.local/share/hyprsimple`. Keep upstream and personal config separate.
+- SDDM theme requires root to install to `/usr/share/sddm/themes/`. The config drop-in goes to `/etc/sddm.conf.d/`.
+- A logout or reboot is required to see the new SDDM login screen.
 
 ## Updating Hyprsimple
 
