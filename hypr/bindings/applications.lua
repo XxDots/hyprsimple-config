@@ -10,30 +10,31 @@
 local vars = require("default.hypr.vars")
 local home = os.getenv("HOME")
 
+-- Scratchpad toggle (replaces SUPER+S Sound panel)
+hl.bind("SUPER + S", hl.dsp.workspace.toggle_special("magic"), { description = "Toggle Scratchpad" })
+
+-- Move focused window to Scratchpad (uses special:magic)
+hl.bind("SUPER + SHIFT + S", hl.dsp.window.move({ workspace = "special:magic" }), { description = "Move to Scratchpad" })
+
+-- Fullscreen toggle
+hl.bind("SUPER + F", hl.dsp.window.fullscreen({ action = "toggle" }), { description = "Fullscreen" })
+
+-- File Manager (new binding)
+hl.bind("SUPER + E", hl.dsp.exec_cmd(vars.fileManager), { description = "File Manager" })
+
+-- Theme Switcher
 hl.bind("SUPER + SHIFT + T", hl.dsp.exec_cmd(home .. "/.local/bin/theme-switcher.sh"),                 { description = "Theme Switcher" })
+-- Wallpaper Picker
 hl.bind("SUPER + SHIFT + W", hl.dsp.exec_cmd(home .. "/.local/bin/wallpaper-switcher.sh pick"),        { description = "Wallpaper Picker" })
 
+-- Terminal
 hl.bind("SUPER + T", hl.dsp.exec_cmd(vars.terminal),    { description = "Terminal" })
+-- Browser
 hl.bind("SUPER + B", hl.dsp.exec_cmd(vars.browser),     { description = "Browser" })
-hl.bind("SUPER + F", hl.dsp.exec_cmd(vars.fileManager), { description = "File Manager" })
+-- App Launcher
 hl.bind("SUPER + A", hl.dsp.exec_cmd(vars.menu),        { description = "App Launcher" })
 
--- Bind your own programs here. hyprsimple only ships keys for software it
--- installs, because a key bound to something absent does nothing at all and
--- says nothing about why:
---
---   hl.bind("SUPER + O", hl.dsp.exec_cmd("obsidian"),       { description = "Notes" })
---   hl.bind("SUPER + SHIFT + A", hl.dsp.exec_cmd("android-studio"), { description = "Android Studio" })
---
--- A plugin binds no keys of its own. It names a panel alias, and the key is
--- yours to choose. For the prayer times panel of the Muslimtify plugin:
---
---   hl.bind("SUPER + P", hl.dsp.exec_cmd(vars.barPanel .. "prayer"), { description = "Prayer Times (panel)" })
---
--- Give every bind a description. The key works without one, so this is easy to
--- skip, and SUPER + / reads its list from Hyprland rather than from this file:
--- a bind with no description has nothing to show there but the key itself.
--- Naming it is what puts it in the list beside everything else.
-
+-- Clipboard Manager
 hl.bind("SUPER + V", hl.dsp.exec_cmd(home .. "/.local/bin/hyprsimple-clipboard-menu.sh"),  { description = "Clipboard Manager" })
+-- Color Picker
 hl.bind("SUPER + M", hl.dsp.exec_cmd("sh -c '" .. vars.colorPicker .. " | wl-copy'"),                           { description = "Color Picker" })
