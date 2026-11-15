@@ -1,0 +1,7 @@
+[Unit]
+Description=Sync SDDM theme with Hyprsimple
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=sudo /home/oreo/.local/bin/sddm-theme-sync.sh

@@ -1,0 +1,10 @@
+[Unit]
+Description=Watch for Hyprsimple theme changes to sync SDDM
+
+[Path]
+PathChanged=%h/.config/hypr/themes/hyprsimple/generated/quickshell-colors.json
+PathChanged=%h/.cache/current_wallpaper
+PathChanged=%h/.cache/current_wallpaper_path
+
+[Install]
+WantedBy=default.target
