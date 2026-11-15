@@ -1,0 +1,19 @@
+# Patch: Remove upstream Sound Panel binding on SUPER+S
+# File: ~/.local/share/hyprsimple/default/hypr/bindings/system.lua
+# 
+# This patch removes the upstream binding:
+#   hl.bind("SUPER + S", hl.dsp.exec_cmd(vars.barPanel .. "volume"), { description = "Sound (panel: volume and output device)" })
+#
+# Rationale: SUPER+S is reassigned to Toggle Scratchpad in user config.
+# The Sound Panel remains accessible via SUPER+ALT+S (Microphone panel) and other panel keys.
+#
+# NOTE: This modification must be reapplied if an upstream update restores the original binding.
+# Apply with: patch -p1 < patches/system.lua.SUPER_S_sound_panel.patch
+# (from ~/.local/share/hyprsimple directory)
+
+--- a/default/hypr/bindings/system.lua
++++ b/default/hypr/bindings/system.lua
+@@ -10,7 +10,6 @@ hl.bind("SUPER + SHIFT + I", hl.dsp.exec_cmd(home .. "/.local/bin/toggle-idle.sh"),             { description = "Toggle Idle Prevention" })
+ hl.bind("SUPER + D",         hl.dsp.exec_cmd(home .. "/.local/bin/notification-dismiss.sh"),    { description = "Dismiss Notifications" })
+-hl.bind("SUPER + S",         hl.dsp.exec_cmd(vars.barPanel .. "volume"),                        { description = "Sound (panel: volume and output device)" })
+ -- The panels that only had a button on the bar. A SHIFT or ALT one sits beside

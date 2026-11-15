@@ -10,9 +10,6 @@
 local vars = require("default.hypr.vars")
 local home = os.getenv("HOME")
 
--- Remove upstream Sound Panel binding on SUPER+S (replaced by Toggle Scratchpad)
-hl.unbind("SUPER", "S")
-
 -- Scratchpad toggle (replaces SUPER+S Sound panel)
 hl.bind("SUPER + S", hl.dsp.workspace.toggle_special("magic"), { description = "Toggle Scratchpad" })
 
