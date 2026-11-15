@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# hypr-clipboard-paste — Paste selected clipboard entry (HyDE style)
+# Dependencies: cliphist, fuzzel, wl-copy, wtype
+
+set -euo pipefail
+
+# Get clipboard history
+history=$(cliphist list)
+
+# Empty database
+if [[ -z "$history" ]]; then
+    exit 0
+fi
+
+# Show clipboard history in fuzzel, get selected line
+# Handle fuzzel cancellation (exit code 130) gracefully
+selected=$(printf "%s" "$history" | fuzzel --dmenu) || {
+    # fuzzel cancelled (exit code 130) or error
+    exit 0
+}
+
+# User cancelled (empty selection)
+if [[ -z "$selected" ]]; then
+    exit 0
+fi
+
+# Extract ID (first field before tab)
+id="${selected%%$'\t'*}"
+
+# Decode and copy to clipboard
+cliphist decode "$id" | wl-copy
+
+# Get active window info
+active_window=$(hyprctl -j activewindow 2>/dev/null)
+if [[ -z "$active_window" ]]; then
+    # No active window, just copy to clipboard
+    exit 0
+fi
+
+# Get window class and title
+class=$(echo "$active_window" | jq -r '.initialClass // .class // ""' 2>/dev/null)
+title=$(echo "$active_window" | jq -r '.title // ""' 2>/dev/null)
+class_lower="${class,,}"
+
+# Determine paste shortcut based on application
+# Returns: "ctrl+v" or "ctrl+shift+v" or "ctrl+shift+v" (ghostty)
+determine_paste_shortcut() {
+    local class_lower="$1"
+    local title_lower="${2,,}"
+    
+    # Terminal emulators that use Ctrl+Shift+V
+    case "${class_lower}" in
+        ghostty|alacritty|kitty|foot|wezterm|konsole|gnome-terminal|xfce4-terminal|tilix|terminator|terminology|cool-retro-term|guake|yakuake|tilda|rxvt|urxvt|st|st-256color|eterm|mlterm|mlterm|sakura|lilyterm|terminology|qterminal|qterminal-gtk3|terminator|terminator-gtk3)
+            echo "ctrl+shift+v"
+            return 0
+            ;;
+        # Ghostty specifically - check class and title
+        "ai.opencode.desktop"|"opencode"|"opencode-desktop")
+            echo "ctrl+shift+v"
+            return 0
+            ;;
+    esac
+    
+    # Check title for terminal indicators
+    case "${title,,}" in
+        *terminal*|*shell*|*bash*|*zsh*|*fish*|*tmux*|*screen*)
+            echo "ctrl+shift+v"
+            return 0
+            ;;
+    esac
+    
+    # Default: standard Ctrl+V for GUI applications
+    echo "ctrl+v"
+    return 0
+}
+
+# Determine paste shortcut
+shortcut=$(determine_paste_shortcut "$class_lower" "$(echo "$title" | tr '[:upper:]' '[:lower:]')")
+
+# Parse shortcut and send via wtype
+# Format: "ctrl+v" or "ctrl+shift+v"
+modifiers=()
+key=""
+
+IFS='+' read -ra parts <<< "$shortcut"
+for part in "${parts[@]}"; do
+    case "${part,,}" in
+        ctrl) modifiers+=("ctrl") ;;
+        shift) modifiers+=("shift") ;;
+        alt) modifiers+=("alt") ;;
+        super|meta|logo) modifiers+=("super") ;;
+        ctrl|shift|alt|super|meta) modifiers+=("${part,,}") ;;
+        *) key="$part" ;;
+    esac
+done
+
+# Build wtype command
+wtype_args=()
+for mod in "${modifiers[@]}"; do
+    wtype_args+=("-M" "$mod")
+done
+wtype_args+=("-k" "$key")
+
+# Small delay to ensure clipboard is ready and window is focused
+sleep 0.05
+
+# Execute the key combination
+wtype "${wtype_args[@]}"

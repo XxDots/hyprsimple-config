@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+# hypr-clipboard-monitor — Manage clipboard history monitors (text & image)
+# Uses PID files for precise process tracking, avoiding pgrep -f false positives.
+
+set -euo pipefail
+
+PID_DIR="${XDG_RUNTIME_DIR:-/tmp}/hypr-clipboard-monitor"
+PID_FILE_TEXT="${PID_DIR}/text.pid"
+PID_FILE_IMAGE="${PID_DIR}/image.pid"
+
+mkdir -p "$PID_DIR"
+
+# Check if a PID is a running wl-paste process with correct args
+is_monitor_running() {
+    local pid_file="$1"
+    local expected_type="$2"  # "text" or "image"
+    
+    [[ -f "$pid_file" ]] || return 1
+    
+    local pid
+    pid=$(cat "$pid_file" 2>/dev/null) || return 1
+    [[ -n "$pid" ]] || return 1
+    
+    # Verify process exists
+    kill -0 "$pid" 2>/dev/null || return 1
+    
+    # Verify it's wl-paste with correct args by checking /proc/$pid/cmdline
+    local cmdline
+    cmdline=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null) || return 1
+    
+    # Check executable is wl-paste and has correct --type argument
+    [[ "$cmdline" == *"wl-paste"* ]] || return 1
+    [[ "$cmdline" == *"--type $expected_type"* ]] || return 1
+    [[ "$cmdline" == *"--watch cliphist store"* ]] || return 1
+    
+    return 0
+}
+
+start_monitor() {
+    local type="$1"  # "text" or "image"
+    local pid_file
+    pid_file="${PID_DIR}/${type}.pid"
+    
+    if is_monitor_running "$pid_file" "$type"; then
+        echo "Monitor ($type) already running (PID: $(cat "$pid_file"))"
+        return 0
+    fi
+    
+    # Start monitor in background
+    wl-paste --type "$type" --watch cliphist store &
+    local pid=$!
+    
+    # Give it a moment to start
+    sleep 0.2
+    
+    # Verify it's running
+    if is_monitor_running "$pid_file" "$type"; then
+        echo "Monitor ($type) already running (PID: $(cat "$pid_file"))"
+        return 0
+    fi
+    
+    # Save PID
+    echo "$pid" > "$pid_file"
+    echo "Started monitor ($type) with PID: $pid"
+}
+
+stop_monitor() {
+    local type="$1"
+    local pid_file="${PID_DIR}/${type}.pid"
+    
+    if [[ -f "$pid_file" ]]; then
+        local pid
+        pid=$(cat "$pid_file" 2>/dev/null)
+        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+            # Verify it's our monitor before killing
+            local cmdline
+            cmdline=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null) || true
+            if [[ "$cmdline" == *"wl-paste"* ]] && [[ "$cmdline" == *"--type $type"* ]] && [[ "$cmdline" == *"--watch cliphist store"* ]]; then
+                kill "$pid" 2>/dev/null
+                echo "Stopped monitor ($type) PID: $pid"
+            else
+                echo "PID $pid is not our monitor ($type), skipping"
+            fi
+        fi
+        rm -f "$pid_file"
+    else
+        echo "No PID file for monitor ($type)"
+    fi
+}
+
+status_monitors() {
+    echo "=== Clipboard Monitor Status ==="
+    for type in text image; do
+        local pid_file="${PID_DIR}/${type}.pid"
+        if is_monitor_running "$pid_file" "$type"; then
+            echo "  $type: RUNNING (PID: $(cat "$pid_file"))"
+        else
+            echo "  $type: STOPPED"
+        fi
+    done
+}
+
+case "${1:-}" in
+    start)
+        start_monitor "text"
+        start_monitor "image"
+        ;;
+    stop)
+        stop_monitor "text"
+        stop_monitor "image"
+        ;;
+    restart)
+        stop_monitor "text"
+        stop_monitor "image"
+        sleep 0.5
+        start_monitor "text"
+        start_monitor "image"
+        ;;
+    status)
+        status_monitors
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac

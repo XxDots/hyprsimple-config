@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# hypr-power-menu — Power menu using fuzzel
+# Dependencies: fuzzel, hyprctl, systemctl, hyprlock
+
+set -euo pipefail
+
+# Menu options with icons
+options="🔒 Lock\n🚪 Logout\n😴 Suspend\n🔄 Reboot\n⏻ Shutdown"
+
+# Show menu with fuzzel
+choice=$(printf "%b" "$options" | fuzzel --dmenu) || {
+    # fuzzel cancelled
+    exit 0
+}
+
+# User cancelled main menu
+if [[ -z "$choice" ]]; then
+    exit 0
+fi
+
+# Handle selection
+case "$choice" in
+    "🔒 Lock")
+        hyprlock
+        ;;
+    "🚪 Logout")
+        hyprctl dispatch exit
+        ;;
+    "😴 Suspend")
+        systemctl suspend
+        ;;
+    "🔄 Reboot")
+        # Confirmation for reboot
+        confirm=$(printf "❌ No\n✅ Yes" | fuzzel --dmenu --prompt "Reboot? ") || {
+            # fuzzel cancelled
+            exit 0
+        }
+        # User cancelled confirmation or selected No
+        if [[ -z "$confirm" || "$confirm" == "❌ No" ]]; then
+            exit 0
+        fi
+        systemctl reboot
+        ;;
+    "⏻ Shutdown")
+        # Confirmation for shutdown
+        confirm=$(printf "❌ No\n✅ Yes" | fuzzel --dmenu --prompt "Shutdown? ") || {
+            # fuzzel cancelled
+            exit 0
+        }
+        # User cancelled confirmation or selected No
+        if [[ -z "$confirm" || "$confirm" == "❌ No" ]]; then
+            exit 0
+        fi
+        systemctl poweroff
+        ;;
+esac

@@ -1,0 +1,23 @@
+# Secrets and sensitive local data
+.env
+.env.*
+*.pem
+*.key
+*.token
+*credentials*
+*secret*
+
+# Runtime and cache
+.cache/
+*.log
+*.tmp
+*.bak
+*.backup
+
+# Generated theme files
+hypr/themes/hyprsimple/generated/
+
+# Local state
+*.swp
+*.swo
+*~

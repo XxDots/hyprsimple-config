@@ -1,0 +1,219 @@
+/* ~/.config/waybar/style.css — tema Catppuccin Mocha */
+
+* {
+    font-family: "MesloLGM Nerd Font", "Symbols Nerd Font", sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    border: none;
+    border-radius: 0;
+    min-height: 0;
+}
+
+window#waybar {
+    background: transparent;
+    color: #cdd6f4;
+}
+
+/* ---- blok modul ---- */
+.modules-left,
+.modules-center,
+.modules-right {
+    background: rgba(30, 30, 46, 0.88);
+    border: 1px solid rgba(88, 91, 112, 0.35);
+    border-radius: 12px;
+    padding: 0 6px;
+}
+
+#custom-launcher,
+#clock,
+#tray,
+#pulseaudio,
+#backlight,
+#network,
+#bluetooth,
+#battery,
+#cpu,
+#memory,
+#temperature,
+#custom-clipboard,
+#custom-power,
+#window,
+#workspaces {
+    padding: 0 8px;
+    margin: 3px 2px;
+    border-radius: 8px;
+    background: transparent;
+}
+
+/* ---- workspace ---- */
+#workspaces button {
+    padding: 0 7px;
+    margin: 3px 1px;
+    border-radius: 8px;
+    color: #a6adc8;
+    background: transparent;
+    transition: all 200ms ease;
+}
+
+#workspaces button:hover {
+    background: rgba(69, 71, 90, 0.6);
+    color: #cdd6f4;
+}
+
+#workspaces button.active {
+    background: #cba6f7;
+    color: #11111b;
+    font-weight: 800;
+}
+
+#workspaces button.urgent {
+    background: #f38ba8;
+    color: #11111b;
+}
+
+#workspaces button.empty {
+    color: #6c7086;
+}
+
+/* ---- modul kiri ---- */
+#custom-launcher {
+    color: #cba6f7;
+    font-size: 15px;
+    padding-right: 12px;
+}
+
+#custom-launcher:hover {
+    color: #89b4fa;
+}
+
+#window {
+    color: #a6adc8;
+    font-weight: 500;
+}
+
+window#waybar.empty #window {
+    background: transparent;
+}
+
+/* ---- jam ---- */
+#clock {
+    color: #cdd6f4;
+    font-weight: 800;
+}
+
+/* ---- audio / terang ---- */
+#pulseaudio {
+    color: #89b4fa;
+}
+
+#pulseaudio.muted {
+    color: #f38ba8;
+}
+
+#backlight {
+    color: #f9e2af;
+}
+
+/* ---- jaringan ---- */
+#network {
+    color: #94e2d5;
+}
+
+#network.disconnected {
+    color: #f38ba8;
+}
+
+#bluetooth {
+    color: #89b4fa;
+}
+
+#bluetooth.disabled,
+#bluetooth.off {
+    color: #6c7086;
+}
+
+#bluetooth.connected {
+    color: #a6e3a1;
+}
+
+/* ---- baterai ---- */
+#battery {
+    color: #a6e3a1;
+}
+
+#battery.charging,
+#battery.plugged {
+    color: #f9e2af;
+}
+
+#battery.warning:not(.charging) {
+    color: #fab387;
+}
+
+#battery.critical:not(.charging) {
+    color: #f38ba8;
+    animation: blink 1s steps(12) infinite;
+}
+
+@keyframes blink {
+    to {
+        color: #11111b;
+        background: #f38ba8;
+    }
+}
+
+/* ---- resource ---- */
+#cpu {
+    color: #f5c2e7;
+}
+
+#memory {
+    color: #cba6f7;
+}
+
+#temperature {
+    color: #fab387;
+}
+
+#temperature.critical {
+    color: #f38ba8;
+}
+
+#custom-clipboard {
+    color: #a6e3a1;
+}
+
+#custom-power {
+    color: #f38ba8;
+    font-size: 14px;
+    padding-right: 10px;
+}
+
+#custom-power:hover {
+    color: #11111b;
+    background: #f38ba8;
+}
+
+#tray {
+    padding: 0 6px;
+}
+
+#tray > .passive {
+    -gtk-icon-effect: dim;
+}
+
+#tray > .needs-attention {
+    -gtk-icon-effect: highlight;
+    background: #f38ba8;
+}
+
+tooltip {
+    background: #1e1e2e;
+    border: 1px solid #cba6f7;
+    border-radius: 10px;
+}
+
+tooltip label {
+    color: #cdd6f4;
+    padding: 4px;
+}

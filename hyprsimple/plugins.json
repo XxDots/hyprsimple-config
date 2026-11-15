@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "plugins": {
+    "muslimtify": {
+      "enabled": true,
+      "placement": "left",
+      "settings": {}
+    }
+  }
+}

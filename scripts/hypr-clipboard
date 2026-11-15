@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# hypr-clipboard — Show clipboard history and copy selected entry
+# Dependencies: cliphist, fuzzel, wl-copy
+
+set -euo pipefail
+
+# Get clipboard history once
+history=$(cliphist list)
+
+# Check if database is empty
+if [[ -z "$history" ]]; then
+    exit 0
+fi
+
+# Show clipboard history in fuzzel, get selected line
+# Handle fuzzel cancellation (exit code 130) gracefully
+selected=$(printf "%s" "$history" | fuzzel --dmenu) || {
+    # fuzzel cancelled (exit code 130) or error
+    exit 0
+}
+
+# User cancelled (empty selection)
+if [[ -z "$selected" ]]; then
+    exit 0
+fi
+
+# Extract ID (first field before tab)
+id="${selected%%$'\t'*}"
+
+# Decode and copy to clipboard
+cliphist decode "$id" | wl-copy

@@ -1,0 +1,16 @@
+-- Override the hyprsimple look and feel. Anything you set here wins, because
+-- this file is loaded after the defaults in
+-- ~/.local/share/hyprsimple/default/hypr/looknfeel.lua
+--
+-- hl.config({
+--   general = {
+--     gaps_in = 0,
+--     gaps_out = 0,
+--     border_size = 0,
+--     layout = "scrolling",
+--   },
+--   decoration = {
+--     rounding = 8,
+--     inactive_opacity = 0.8,
+--   },
+-- })
