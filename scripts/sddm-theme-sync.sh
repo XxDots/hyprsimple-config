@@ -12,6 +12,7 @@ SDDM_THEME_DIR="/usr/share/sddm/themes/hyprsimple"
 WALLPAPER_DEST="${SDDM_THEME_DIR}/background.jpg"
 MAIN_QML_DEST="${SDDM_THEME_DIR}/Main.qml"
 THEME_CONF_DEST="${SDDM_THEME_DIR}/theme.conf"
+WALLPAPER_MAX_BYTES=$((64 * 1024 * 1024))
 
 # Colors for output (only to stderr)
 RED='\033[0;31m'
@@ -80,12 +81,13 @@ read_colors() {
     SUCCESS=$(jq -r '.success // empty' "${colors_file}")
     WARNING=$(jq -r '.warning // empty' "${colors_file}")
     DANGER=$(jq -r '.danger // empty' "${colors_file}")
+    INFO=$(jq -r '.info // empty' "${colors_file}")
     MUTED=$(jq -r '.muted // empty' "${colors_file}")
     BORDER=$(jq -r '.border // empty' "${colors_file}")
 
     # Validate all colors are present and match hex format
-    local all_colors=("${BACKGROUND}" "${SURFACE}" "${FOREGROUND}" "${ACCENT}" "${ACCENT_DIM}" "${SECONDARY}" "${SUCCESS}" "${WARNING}" "${DANGER}" "${MUTED}" "${BORDER}")
-    local color_names=("background" "surface" "foreground" "accent" "accent_dim" "secondary" "success" "warning" "danger" "muted" "border")
+    local all_colors=("${BACKGROUND}" "${SURFACE}" "${FOREGROUND}" "${ACCENT}" "${ACCENT_DIM}" "${SECONDARY}" "${SUCCESS}" "${WARNING}" "${DANGER}" "${INFO}" "${MUTED}" "${BORDER}")
+    local color_names=("background" "surface" "foreground" "accent" "accent_dim" "secondary" "success" "warning" "danger" "info" "muted" "border")
     local hex_regex='^#[0-9a-fA-F]{6}$'
 
     for i in "${!all_colors[@]}"; do
@@ -104,36 +106,31 @@ read_colors() {
     return 0
 }
 
-# Validate wallpaper source
+# Validate the copied temporary wallpaper file (never the original source path)
 validate_wallpaper() {
-    local source="$1"
+    local candidate="$1"
 
-    if [[ ! -f "${source}" ]]; then
-        warn "Wallpaper source not found: ${source}"
+    # Must be a regular file, not a symlink or special file.
+    if [[ ! -f "${candidate}" || -L "${candidate}" ]]; then
+        warn "Wallpaper candidate is not a regular file: ${candidate}"
         return 1
     fi
 
-    # Check it's a regular file (not symlink, not device, etc.)
-    if [[ ! -f "${source}" || -L "${source}" ]]; then
-        warn "Wallpaper source is not a regular file or is a symlink: ${source}"
+    local size
+    size=$(stat -c %s -- "${candidate}" 2>/dev/null || echo 0)
+    if [[ ! "${size}" =~ ^[0-9]+$ || "${size}" -le 0 ]]; then
+        warn "Wallpaper candidate is empty or unreadable: ${candidate}"
+        return 1
+    fi
+    if [[ "${size}" -gt "${WALLPAPER_MAX_BYTES}" ]]; then
+        warn "Wallpaper candidate exceeds ${WALLPAPER_MAX_BYTES} bytes: ${size}"
         return 1
     fi
 
-    # Check it's under user's cache directory (prevent path traversal)
-    local real_source=$(realpath -e "${source}" 2>/dev/null || echo "")
-    local real_cache=$(realpath -e "${USER_HOME}/.cache" 2>/dev/null || echo "")
-    if [[ -z "${real_source}" || -z "${real_cache}" ]]; then
-        warn "Cannot resolve real paths for wallpaper validation"
-        return 1
-    fi
-    if [[ "${real_source}" != "${real_cache}"* ]]; then
-        warn "Wallpaper source outside allowed directory: ${real_source}"
-        return 1
-    fi
-
-    # Check file type is an image
-    local mime_type=$(file --brief --mime-type "${source}" 2>/dev/null || echo "")
-    if [[ ! "${mime_type}" =~ ^image/(jpeg|png|webp) ]]; then
+    # Check file type is a supported image (validated on the copied bytes).
+    local mime_type
+    mime_type=$(file --brief --mime-type -- "${candidate}" 2>/dev/null || echo "")
+    if [[ ! "${mime_type}" =~ ^image/(jpeg|png|webp)$ ]]; then
         warn "Wallpaper is not a supported image type: ${mime_type}"
         return 1
     fi
@@ -141,16 +138,145 @@ validate_wallpaper() {
     return 0
 }
 
-# Sync wallpaper using atomic write
+# Sync wallpaper: open the source exactly once (O_NOFOLLOW|O_NONBLOCK), verify it
+# with fstat(), stream its bytes into a root-owned temp with a hard size cap, then
+# validate and atomically install that temp file.
 sync_wallpaper() {
-    if validate_wallpaper "${WALLPAPER_SOURCE}"; then
-        local tmp_dest=$(mktemp "${WALLPAPER_DEST}.tmp.XXXXXX")
-        cp "${WALLPAPER_SOURCE}" "${tmp_dest}"
-        chmod 644 "${tmp_dest}"
-        mv -f "${tmp_dest}" "${WALLPAPER_DEST}"
+    local tmp_dest=""
+
+    if ! tmp_dest=$(mktemp "${WALLPAPER_DEST}.tmp.XXXXXX"); then
+        warn "Cannot create temporary wallpaper file; keeping existing wallpaper"
+        return 0
+    fi
+
+    # Derive the source components from the configured path, but never open that
+    # full pathname. The home directory and .cache are opened as pinned directory
+    # descriptors; the wallpaper is opened only relative to the pinned .cache fd.
+    local wallpaper_rel="${WALLPAPER_SOURCE#"${USER_HOME}/"}"
+    local wallpaper_dir="${wallpaper_rel%/*}"
+    local wallpaper_name="${wallpaper_rel##*/}"
+
+    if ! python3 - "${USER_HOME}" "${wallpaper_dir}" "${wallpaper_name}" "${tmp_dest}" "${WALLPAPER_MAX_BYTES}" <<'PYCOPY'
+import errno
+import os
+import stat
+import sys
+
+home_path, cache_name, file_name, dst_path = sys.argv[1:5]
+max_bytes = int(sys.argv[5])
+
+
+def fail(message):
+    sys.stderr.write("sddm-sync: %s\n" % message)
+    try:
+        os.unlink(dst_path)
+    except OSError:
+        pass
+    sys.exit(1)
+
+
+# Mandatory security flags must exist; never fall back to a no-op value.
+missing = [name for name in ("O_NOFOLLOW", "O_NONBLOCK", "O_DIRECTORY") if not hasattr(os, name)]
+if missing:
+    fail("missing required OS flags: %s" % ", ".join(missing))
+
+O_NOFOLLOW = os.O_NOFOLLOW
+O_NONBLOCK = os.O_NONBLOCK
+O_DIRECTORY = os.O_DIRECTORY
+
+# The source must be exactly one directory component plus one file component.
+if (not cache_name or not file_name
+        or os.sep in cache_name or os.sep in file_name
+        or cache_name in (".", "..") or file_name in (".", "..")):
+    fail("invalid wallpaper source layout")
+
+try:
+    home_fd = os.open(home_path, os.O_RDONLY | O_DIRECTORY)
+except OSError as exc:
+    fail("cannot open user home directory: %s" % (exc.strerror or exc))
+
+cache_fd = None
+src_fd = None
+try:
+    try:
+        cache_fd = os.open(cache_name, os.O_RDONLY | O_DIRECTORY | O_NOFOLLOW, dir_fd=home_fd)
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            fail("wallpaper cache directory is a symlink")
+        fail("cannot open wallpaper cache directory: %s" % (exc.strerror or exc))
+
+    try:
+        src_fd = os.open(file_name, os.O_RDONLY | O_NOFOLLOW | O_NONBLOCK, dir_fd=cache_fd)
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            fail("wallpaper source is a symlink")
+        fail("cannot open wallpaper source: %s" % (exc.strerror or exc))
+
+    st = os.fstat(src_fd)
+    if not stat.S_ISREG(st.st_mode):
+        fail("wallpaper source is not a regular file")
+    if st.st_size == 0:
+        fail("wallpaper source is empty")
+    if st.st_size > max_bytes:
+        fail("wallpaper source exceeds %d bytes" % max_bytes)
+
+    try:
+        dst_fd = os.open(dst_path, os.O_WRONLY | os.O_TRUNC | O_NOFOLLOW)
+    except OSError as exc:
+        fail("cannot open wallpaper temp file: %s" % (exc.strerror or exc))
+
+    total = 0
+    try:
+        while True:
+            chunk = os.read(src_fd, 65536)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                fail("wallpaper grew beyond %d bytes during copy" % max_bytes)
+            view = memoryview(chunk)
+            while view:
+                written = os.write(dst_fd, view)
+                if written <= 0:
+                    fail("short write while copying wallpaper")
+                view = view[written:]
+        if total == 0:
+            fail("wallpaper source is empty")
+        os.fsync(dst_fd)
+    finally:
+        os.close(dst_fd)
+finally:
+    if src_fd is not None:
+        os.close(src_fd)
+    if cache_fd is not None:
+        os.close(cache_fd)
+    os.close(home_fd)
+PYCOPY
+    then
+        warn "Wallpaper copy failed; keeping existing wallpaper"
+        rm -f -- "${tmp_dest}"
+        return 0
+    fi
+
+    # Validate the copied bytes, not the original pathname.
+    if ! validate_wallpaper "${tmp_dest}"; then
+        warn "Skipping wallpaper sync (validation failed); keeping existing wallpaper"
+        rm -f -- "${tmp_dest}"
+        return 0
+    fi
+
+    # Prepare final ownership/mode before the atomic replacement.
+    if ! chown root:root -- "${tmp_dest}" || ! chmod 0644 -- "${tmp_dest}"; then
+        warn "Failed to set wallpaper ownership/permissions; keeping existing wallpaper"
+        rm -f -- "${tmp_dest}"
+        return 0
+    fi
+
+    if mv -f -- "${tmp_dest}" "${WALLPAPER_DEST}"; then
         log "Wallpaper synced to ${WALLPAPER_DEST}"
     else
-        warn "Skipping wallpaper sync (validation failed)"
+        warn "Failed to install wallpaper; keeping existing wallpaper"
+        rm -f -- "${tmp_dest}"
     fi
 }
 
@@ -179,22 +305,22 @@ generate_main_qml() {
     cat > "${tmp_qml}" <<'QMLEOF'
 /***************************************************************************
  * Hyprsimple SDDM Dynamic Theme
+ * Asymmetric layout: login panel left, wallpaper right
  * Colors and wallpaper synchronized from active Hyprsimple theme
  * DO NOT EDIT - Generated by sddm-theme-sync
  ***************************************************************************/
 
-import QtQuick 2.0
+import QtQuick 2.15
 import SddmComponents 2.0
 
 Rectangle {
     id: container
-    width: 640
-    height: 480
+    anchors.fill: parent
 
     LayoutMirroring.enabled: Qt.locale().textDirection == Qt.RightToLeft
     LayoutMirroring.childrenInherit: true
 
-    property int sessionIndex: session.index
+    property int sessionIndex: 0
 
     TextConstants { id: textConstants }
 
@@ -202,7 +328,7 @@ Rectangle {
         target: sddm
 
         function onLoginSucceeded() {
-            errorMessage.color = @@ACCENT@@
+            errorMessage.color = @@SUCCESS@@
             errorMessage.text = textConstants.loginSucceeded
         }
         function onLoginFailed() {
@@ -211,12 +337,12 @@ Rectangle {
             errorMessage.text = textConstants.loginFailed
         }
         function onInformationMessage(message) {
-            errorMessage.color = @@DANGER@@
+            errorMessage.color = @@INFO@@
             errorMessage.text = message
         }
     }
 
-    // Background
+    // Background - full screen wallpaper
     Background {
         anchors.fill: parent
         source: Qt.resolvedUrl(config.background)
@@ -229,40 +355,79 @@ Rectangle {
         }
     }
 
-    // Dark overlay for better text readability
+    // Dark overlay for text readability
     Rectangle {
         anchors.fill: parent
         color: @@BACKGROUND@@
-        opacity: 0.6
+        opacity: 0.55
     }
 
-    // Main login panel
+    // Clock at top-right
+    Clock {
+        id: clock
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.margins: 24
+        color: @@FOREGROUND@@
+        timeFont.family: "JetBrainsMono Nerd Font Mono"
+        timeFont.pixelSize: 28
+        dateFont.family: "JetBrainsMono Nerd Font Mono"
+        dateFont.pixelSize: 12
+    }
+
+    // Left login panel (glass: translucent dark fill; no native blur because
+    // QtGraphicalEffects is not installed in this Qt/SDDM runtime)
     Rectangle {
         id: loginPanel
-        anchors.centerIn: parent
-        width: Math.max(360, mainColumn.implicitWidth + 60)
+        width: Math.min(300, parent.width * 0.25)
         height: mainColumn.implicitHeight + 60
-        radius: 12
-        color: @@SURFACE@@
-        border.color: @@ACCENT@@
-        border.width: 2
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.leftMargin: Math.max(24, parent.width * 0.03)
+        radius: 14
+        color: "transparent"
+        clip: true
+
+        // Translucent glass fill (safe fallback when real blur is unavailable)
+        Rectangle {
+            anchors.fill: parent
+            radius: 14
+            color: @@SURFACE@@
+            opacity: 0.48
+        }
 
         Column {
             id: mainColumn
-            anchors.centerIn: parent
-            spacing: 16
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.margins: 20
+            spacing: 12
 
-            // Welcome text
+            // Welcome heading
             Text {
                 id: welcomeText
-                anchors.horizontalCenter: parent.horizontalCenter
+                width: parent.width
                 color: @@FOREGROUND@@
                 text: textConstants.welcomeText.arg(sddm.hostName)
                 wrapMode: Text.WordWrap
-                font.pixelSize: 22
+                font.pixelSize: 20
                 font.weight: Font.Medium
                 elide: Text.ElideRight
-                horizontalAlignment: Text.AlignHCenter
+                horizontalAlignment: Text.AlignLeft
+            }
+
+            // Date display (below welcome)
+            Text {
+                id: dateText
+                width: parent.width
+                color: @@MUTED@@
+                text: {
+                    var d = new Date();
+                    return d.toLocaleDateString(Qt.locale(), { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+                }
+                font.pixelSize: 13
+                horizontalAlignment: Text.AlignLeft
             }
 
             // Username field
@@ -275,10 +440,9 @@ Rectangle {
                     font.bold: true
                     font.pixelSize: 13
                 }
-
                 TextBox {
                     id: name
-                    width: parent.width; height: 38
+                    width: parent.width; height: 34
                     text: userModel.lastUser
                     font.pixelSize: 15
                     textColor: @@FOREGROUND@@
@@ -286,12 +450,17 @@ Rectangle {
                     borderColor: @@MUTED@@
                     focusColor: @@ACCENT@@
                     hoverColor: @@ACCENT_DIM@@
-                    radius: 6
-                    KeyNavigation.backtab: rebootButton; KeyNavigation.tab: password
+                    radius: 12
+                    KeyNavigation.tab: password
 
                     Keys.onPressed: function (event) {
                         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                             sddm.login(name.text, password.text, sessionIndex)
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Backtab) {
+                            if (hibernateButton.visible) hibernateButton.forceActiveFocus();
+                            else if (suspendButton.visible) suspendButton.forceActiveFocus();
+                            else rebootButton.forceActiveFocus();
                             event.accepted = true
                         }
                     }
@@ -308,18 +477,17 @@ Rectangle {
                     font.bold: true
                     font.pixelSize: 13
                 }
-
                 PasswordBox {
                     id: password
-                    width: parent.width; height: 38
+                    width: parent.width; height: 34
                     font.pixelSize: 15
                     textColor: @@FOREGROUND@@
                     color: @@SURFACE@@
                     borderColor: @@MUTED@@
                     focusColor: @@ACCENT@@
                     hoverColor: @@ACCENT_DIM@@
-                    radius: 6
-                    KeyNavigation.backtab: name; KeyNavigation.tab: session
+                    radius: 12
+                    KeyNavigation.backtab: name; KeyNavigation.tab: loginButton
 
                     Keys.onPressed: function (event) {
                         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
@@ -330,132 +498,254 @@ Rectangle {
                 }
             }
 
-            // Session selector
-            Column {
-                width: parent.width
-                spacing: 6
-                Text {
-                    text: textConstants.session
-                    color: @@FOREGROUND@@
-                    font.bold: true
-                    font.pixelSize: 13
-                }
-
-                ComboBox {
-                    id: session
-                    width: parent.width; height: 38
-                    font.pixelSize: 15
-                    color: @@SURFACE@@
-                    borderColor: @@MUTED@@
-                    focusColor: @@ACCENT@@
-                    hoverColor: @@ACCENT_DIM@@
-                    textColor: @@FOREGROUND@@
-                    menuColor: @@SURFACE@@
-                    arrowColor: @@ACCENT@@
-                    KeyNavigation.backtab: password; KeyNavigation.tab: layoutBox
-                }
-            }
-
-            // Keyboard layout (only show if multiple)
-            Column {
-                width: parent.width
-                spacing: 6
-                visible: keyboard.enabled && keyboard.layouts.length > 0
-
-                Text {
-                    text: textConstants.layout
-                    color: @@FOREGROUND@@
-                    font.bold: true
-                    font.pixelSize: 13
-                }
-
-                LayoutBox {
-                    id: layoutBox
-                    width: parent.width; height: 38
-                    font.pixelSize: 15
-                    color: @@FOREGROUND@@
-                    KeyNavigation.backtab: session; KeyNavigation.tab: loginButton
-                }
-            }
-
-            // Error/info message
+            // Error/info message area
             Text {
                 id: errorMessage
-                anchors.horizontalCenter: parent.horizontalCenter
+                width: parent.width
                 text: textConstants.prompt
                 color: @@MUTED@@
-                font.pixelSize: 11
+                font.pixelSize: 12
                 wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
             }
 
-            // Buttons
+            // Login button
+            Button {
+                id: loginButton
+                width: parent.width
+                height: 34
+                text: textConstants.login
+                font.pixelSize: 14
+                font.bold: true
+                textColor: @@FOREGROUND@@
+                color: @@ACCENT@@
+                activeColor: @@ACCENT_DIM@@
+                pressedColor: @@SURFACE@@
+                borderColor: @@ACCENT@@
+                radius: 10
+                onClicked: sddm.login(name.text, password.text, sessionIndex)
+                KeyNavigation.backtab: password; KeyNavigation.tab: shutdownButton
+            }
+
+            // System controls row - icon buttons (30x30 clickable, ~17px icons)
             Row {
                 spacing: 10
                 anchors.horizontalCenter: parent.horizontalCenter
-                property int btnWidth: Math.max(loginButton.implicitWidth,
-                                                shutdownButton.implicitWidth,
-                                                rebootButton.implicitWidth, 100) + 16
 
-                Button {
-                    id: loginButton
-                    text: textConstants.login
-                    width: parent.btnWidth
-                    height: 40
-                    font.pixelSize: 14
-                    font.bold: true
-                    textColor: @@FOREGROUND@@
-                    color: @@ACCENT@@
-                    activeColor: @@ACCENT_DIM@@
-                    pressedColor: @@SURFACE@@
-                    borderColor: @@ACCENT@@
-                    onClicked: sddm.login(name.text, password.text, sessionIndex)
-                    KeyNavigation.backtab: layoutBox; KeyNavigation.tab: shutdownButton
-                }
-
-                Button {
+                // Shutdown
+                Item {
                     id: shutdownButton
-                    text: textConstants.shutdown
-                    width: parent.btnWidth
-                    height: 40
-                    font.pixelSize: 14
-                    textColor: @@FOREGROUND@@
-                    color: @@SURFACE@@
-                    activeColor: @@ACCENT_DIM@@
-                    pressedColor: @@SURFACE@@
-                    borderColor: @@DANGER@@
-                    onClicked: sddm.powerOff()
-                    KeyNavigation.backtab: loginButton; KeyNavigation.tab: rebootButton
+                    width: 30
+                    height: 30
+
+                    Text {
+                        id: shutdownIcon
+                        anchors.centerIn: parent
+                        font.pixelSize: 23
+                        font.family: "JetBrainsMono Nerd Font Mono"
+                        color: (shutdownMouse.containsMouse || shutdownButton.activeFocus) ? @@ACCENT@@ : @@FOREGROUND@@
+                        text: "⏻"
+                    }
+
+                    // Tooltip: Shutdown
+                    Text {
+                        id: shutdownTip
+                        text: textConstants.shutdown
+                        visible: shutdownMouse.containsMouse || shutdownButton.activeFocus
+                        anchors.bottom: parent.top
+                        anchors.bottomMargin: -6
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        color: @@FOREGROUND@@
+                        font.pixelSize: 10
+                    }
+
+                    MouseArea {
+                        id: shutdownMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        acceptedButtons: Qt.LeftButton
+                        onClicked: sddm.powerOff()
+                    }
+
+                    KeyNavigation.tab: rebootButton; KeyNavigation.backtab: loginButton
+                    Keys.onPressed: function (event) {
+                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Space) {
+                            sddm.powerOff()
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Tab) {
+                            if (rebootButton.visible) rebootButton.forceActiveFocus();
+                            else if (suspendButton.visible) suspendButton.forceActiveFocus();
+                            else if (hibernateButton.visible) hibernateButton.forceActiveFocus();
+                            else name.forceActiveFocus();
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Backtab) {
+                            loginButton.forceActiveFocus();
+                            event.accepted = true
+                        }
+                    }
                 }
 
-                Button {
+                // Reboot
+                Item {
                     id: rebootButton
-                    text: textConstants.reboot
-                    width: parent.btnWidth
-                    height: 40
-                    font.pixelSize: 14
-                    textColor: @@FOREGROUND@@
-                    color: @@SURFACE@@
-                    activeColor: @@ACCENT_DIM@@
-                    pressedColor: @@SURFACE@@
-                    borderColor: @@WARNING@@
-                    onClicked: sddm.reboot()
-                    KeyNavigation.backtab: shutdownButton; KeyNavigation.tab: name
+                    width: 30
+                    height: 30
+
+                    Text {
+                        id: rebootIcon
+                        anchors.centerIn: parent
+                        font.pixelSize: 23
+                        font.family: "JetBrainsMono Nerd Font Mono"
+                        color: (rebootMouse.containsMouse || rebootButton.activeFocus) ? @@ACCENT@@ : @@FOREGROUND@@
+                        text: "↻"
+                    }
+
+                    // Tooltip: Reboot
+                    Text {
+                        id: rebootTip
+                        text: textConstants.reboot
+                        visible: rebootMouse.containsMouse || rebootButton.activeFocus
+                        anchors.bottom: parent.top
+                        anchors.bottomMargin: -6
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        color: @@FOREGROUND@@
+                        font.pixelSize: 10
+                    }
+
+                    MouseArea {
+                        id: rebootMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        acceptedButtons: Qt.LeftButton
+                        onClicked: sddm.reboot()
+                    }
+
+                    KeyNavigation.tab: suspendButton; KeyNavigation.backtab: shutdownButton
+                    Keys.onPressed: function (event) {
+                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Space) {
+                            sddm.reboot()
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Tab) {
+                            if (suspendButton.visible) suspendButton.forceActiveFocus();
+                            else if (hibernateButton.visible) hibernateButton.forceActiveFocus();
+                            else name.forceActiveFocus();
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Backtab) {
+                            shutdownButton.forceActiveFocus();
+                            event.accepted = true
+                        }
+                    }
+                }
+
+                // Suspend
+                Item {
+                    id: suspendButton
+                    width: 30
+                    height: 30
+                    visible: sddm.canSuspend
+
+                    Text {
+                        id: suspendIcon
+                        anchors.centerIn: parent
+                        font.pixelSize: 23
+                        font.family: "JetBrainsMono Nerd Font Mono"
+                        color: (suspendMouse.containsMouse || suspendButton.activeFocus) ? @@ACCENT@@ : @@FOREGROUND@@
+                        text: "☾"
+                    }
+
+                    // Tooltip: Suspend
+                    Text {
+                        id: suspendTip
+                        text: textConstants.suspend
+                        visible: suspendMouse.containsMouse || suspendButton.activeFocus
+                        anchors.bottom: parent.top
+                        anchors.bottomMargin: -6
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        color: @@FOREGROUND@@
+                        font.pixelSize: 10
+                    }
+
+                    MouseArea {
+                        id: suspendMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        acceptedButtons: Qt.LeftButton
+                        onClicked: sddm.suspend()
+                    }
+
+                    KeyNavigation.tab: hibernateButton; KeyNavigation.backtab: rebootButton
+                    Keys.onPressed: function (event) {
+                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Space) {
+                            sddm.suspend()
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Tab) {
+                            if (hibernateButton.visible) hibernateButton.forceActiveFocus();
+                            else name.forceActiveFocus();
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Backtab) {
+                            rebootButton.forceActiveFocus();
+                            event.accepted = true
+                        }
+                    }
+                }
+
+                // Hibernate
+                Item {
+                    id: hibernateButton
+                    width: 30
+                    height: 30
+                    visible: sddm.canHibernate
+
+                    Text {
+                        id: hibernateIcon
+                        anchors.centerIn: parent
+                        font.pixelSize: 23
+                        font.family: "JetBrainsMono Nerd Font Mono"
+                        color: (hibernateMouse.containsMouse || hibernateButton.activeFocus) ? @@ACCENT@@ : @@FOREGROUND@@
+                        text: "❄"
+                    }
+
+                    // Tooltip: Hibernate
+                    Text {
+                        id: hibernateTip
+                        text: textConstants.hibernate
+                        visible: hibernateMouse.containsMouse || hibernateButton.activeFocus
+                        anchors.bottom: parent.top
+                        anchors.bottomMargin: -6
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        color: @@FOREGROUND@@
+                        font.pixelSize: 10
+                    }
+
+                    MouseArea {
+                        id: hibernateMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        acceptedButtons: Qt.LeftButton
+                        onClicked: sddm.hibernate()
+                    }
+
+                    KeyNavigation.tab: name; KeyNavigation.backtab: suspendButton
+                    Keys.onPressed: function (event) {
+                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Space) {
+                            sddm.hibernate()
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Tab) {
+                            name.forceActiveFocus();
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Backtab) {
+                            if (suspendButton.visible) suspendButton.forceActiveFocus();
+                            else rebootButton.forceActiveFocus();
+                            event.accepted = true
+                        }
+                    }
                 }
             }
         }
-    }
-
-    // Clock at top-right
-    Clock {
-        id: clock
-        anchors.top: parent.top
-        anchors.right: parent.right
-        anchors.margins: 24
-        color: @@FOREGROUND@@
-        timeFont.family: "JetBrainsMono Nerd Font Mono"
-        timeFont.pixelSize: 28
-        dateFont.family: "JetBrainsMono Nerd Font Mono"
-        dateFont.pixelSize: 12
     }
 
     Component.onCompleted: {
@@ -478,6 +768,7 @@ QMLEOF
         -e "s/@@SUCCESS@@/\"${SUCCESS}\"/g" \
         -e "s/@@WARNING@@/\"${WARNING}\"/g" \
         -e "s/@@DANGER@@/\"${DANGER}\"/g" \
+        -e "s/@@INFO@@/\"${INFO}\"/g" \
         -e "s/@@MUTED@@/\"${MUTED}\"/g" \
         -e "s/@@BORDER@@/\"${BORDER}\"/g" \
         "${tmp_qml}"
