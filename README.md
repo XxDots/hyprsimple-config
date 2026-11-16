@@ -25,7 +25,8 @@ This backup contains only user-owned configuration overrides and custom scripts.
 | `hyprsimple/` | `~/.config/hyprsimple/` | Plugin configuration |
 | `scripts/` | `~/.local/bin/` (custom only) | Personal helper scripts |
 | `starship.toml` | `~/.config/starship.toml` | Starship prompt configuration |
-| `sddm/` | `/usr/share/sddm/themes/hyprsimple/` | SDDM login theme (system-wide) |
+| `sddm/Main.qml`, `sddm/theme.conf`, `sddm/background.jpg` | `/usr/share/sddm/themes/hyprsimple/` | SDDM login theme (system-wide) |
+| `sddm/99-hyprsimple-theme.conf` | `/etc/sddm.conf.d/` | SDDM theme selection drop-in |
 
 ## Personal Customizations
 
@@ -101,9 +102,8 @@ This repository includes a **dynamic SDDM theme** that automatically synchronize
 - All sourced from `theme-active.json` — no hardcoded values
 
 **Features:**
-- Compact centered login card matching reference design
+- Asymmetric layout: a compact glass-style login panel anchored on the left, with the wallpaper visible on the right
 - Username/password fields with focus highlighting (accent color)
-- Session selector and keyboard layout dropdown
 - Login button uses accent; shutdown, reboot, suspend, and hibernate icons use accent on hover/focus and foreground otherwise
 - Clock with date at top-right
 - Dark semi-transparent overlay on wallpaper for readability
@@ -138,6 +138,9 @@ Ensure these are installed before restoring:
 - `sddm` (for login theme)
 - `jq` (for parsing JSON in sync script)
 - `file` (for wallpaper MIME type validation)
+- `python3` (used by the wallpaper synchronization helper)
+
+Standard base-system utilities such as `getent`, `stat`, `mktemp`, `sed`, `chmod`, `mv`, and `cut` are assumed to be available and are not listed individually.
 
 ## Restore Procedure
 
@@ -172,6 +175,20 @@ Ensure these are installed before restoring:
 
 5. **Install SDDM dynamic theme** (optional, requires root):
    ```bash
+   # Back up any existing theme and drop-in before overwriting (timestamped;
+   # only items that already exist are backed up)
+   BACKUP_TS=$(date +%Y%m%d-%H%M%S)
+   THEME_BACKUP="/usr/share/sddm/themes/hyprsimple.bak.$BACKUP_TS"
+   CONF_BACKUP="/etc/sddm.conf.d/99-hyprsimple-theme.conf.bak.$BACKUP_TS"
+   if [ -d /usr/share/sddm/themes/hyprsimple ]; then
+       [ ! -e "$THEME_BACKUP" ] || { echo "Refusing to overwrite $THEME_BACKUP" >&2; exit 1; }
+       sudo cp -a /usr/share/sddm/themes/hyprsimple "$THEME_BACKUP"
+   fi
+   if [ -f /etc/sddm.conf.d/99-hyprsimple-theme.conf ]; then
+       [ ! -e "$CONF_BACKUP" ] || { echo "Refusing to overwrite $CONF_BACKUP" >&2; exit 1; }
+       sudo cp -a /etc/sddm.conf.d/99-hyprsimple-theme.conf "$CONF_BACKUP"
+   fi
+
    # Install theme files (only the three runtime theme files)
    sudo mkdir -p /usr/share/sddm/themes/hyprsimple
    sudo cp ~/hyprsimple-config-backup/sddm/Main.qml /usr/share/sddm/themes/hyprsimple/
@@ -186,6 +203,9 @@ Ensure these are installed before restoring:
    
    # Permit passwordless execution of the sync helper (additive; does not reduce existing sudo rights)
    echo "$USER ALL=(ALL) NOPASSWD: /usr/local/bin/sddm-theme-sync" | sudo tee /etc/sudoers.d/sddm-theme-sync
+
+   # Validate the drop-in syntax; this must pass before relying on the rule
+   sudo visudo -cf /etc/sudoers.d/sddm-theme-sync
    
    # Install and enable systemd units
    # System-level boot-time service (runs before SDDM)
@@ -223,10 +243,78 @@ Ensure these are installed before restoring:
 - Do NOT clone this repository into `~/.local/share/hyprsimple`. Keep upstream and personal config separate.
 - SDDM theme requires root to install to `/usr/share/sddm/themes/`. The config drop-in goes to `/etc/sddm.conf.d/`.
 - A logout or reboot is required to see the new SDDM login screen.
-- **Dynamic SDDM theme:** Requires `jq` and `file` packages. The helper is installed as `root:root`, mode `0755`, at `/usr/local/bin/sddm-theme-sync`. The NOPASSWD rule permits passwordless execution of this helper; it is additive and does not restrict an account that already has `(ALL) ALL`. Wallpapers over 64 MiB, symlinks, and non-regular files are rejected, and the temporary copy is MIME-validated before installation.
+- **Dynamic SDDM theme:** Requires `jq`, `file`, and `python3` packages. The helper is installed as `root:root`, mode `0755`, at `/usr/local/bin/sddm-theme-sync`. The NOPASSWD rule permits passwordless execution of this helper; it is additive and does not restrict an account that already has `(ALL) ALL`. Wallpapers over 64 MiB, symlinks, and non-regular files are rejected, and the temporary copy is MIME-validated before installation.
 - System-level boot service `sddm-theme-sync@<user>.service` runs before `sddm.service` — ensures first login screen uses latest theme.
 - User-level path unit watches `~/.config/quickshell/theme-active.json` and `~/.cache/current_wallpaper*` — requires `loginctl enable-linger <user>` for post-logout sync.
 - The generated `Main.qml` in `/usr/share/sddm/themes/hyprsimple/` is overwritten on every theme/wallpaper change — do not edit it directly.
+
+### SDDM Rollback
+
+The installation step creates timestamped backups only for items that already existed:
+
+```
+/usr/share/sddm/themes/hyprsimple.bak.YYYYMMDD-HHMMSS
+/etc/sddm.conf.d/99-hyprsimple-theme.conf.bak.YYYYMMDD-HHMMSS
+```
+
+List the available backups and choose the timestamp to restore:
+
+```bash
+ls -d /usr/share/sddm/themes/hyprsimple.bak.* /etc/sddm.conf.d/99-hyprsimple-theme.conf.bak.* 2>/dev/null
+```
+
+Before restoring, record the enabled/active state of the user path unit and the boot-time instance so it can be restored deliberately later:
+
+```bash
+UNIT_STATE="$HOME/.local/state/sddm-theme-sync-units.$(date +%Y%m%d-%H%M%S).txt"
+mkdir -p "$HOME/.local/state"
+{
+    systemctl --user show -p Id -p UnitFileState -p ActiveState sddm-theme-sync.path
+    systemctl show -p Id -p UnitFileState -p ActiveState "sddm-theme-sync@$USER.service"
+} > "$UNIT_STATE"
+cat "$UNIT_STATE"
+```
+
+Then stop the user units and disable the boot-time instance; otherwise a theme or wallpaper change can re-sync and overwrite the restored files:
+
+```bash
+systemctl --user stop sddm-theme-sync.path sddm-theme-sync.service
+sudo systemctl disable --now "sddm-theme-sync@$USER.service"
+```
+
+`sddm-theme-sync.service` is a oneshot triggered by the path unit, and the boot-time instance is also oneshot. Do not start either oneshot service merely to restore an `active` reading; that would run another synchronization immediately. Stopping the path unit does not change whether it is enabled, so start it again only if it was active before. The boot-time instance was disabled by the rollback; re-enable it only if the saved state was `enabled`.
+
+Restore only the items whose backups exist, using the chosen timestamp:
+
+```bash
+BACKUP_TS=YYYYMMDD-HHMMSS
+
+if [ -d "/usr/share/sddm/themes/hyprsimple.bak.$BACKUP_TS" ]; then
+    if [ -e /usr/share/sddm/themes/hyprsimple ]; then
+        sudo mv /usr/share/sddm/themes/hyprsimple "/usr/share/sddm/themes/hyprsimple.replaced.$BACKUP_TS"
+    fi
+    sudo cp -a "/usr/share/sddm/themes/hyprsimple.bak.$BACKUP_TS" /usr/share/sddm/themes/hyprsimple
+fi
+
+if [ -f "/etc/sddm.conf.d/99-hyprsimple-theme.conf.bak.$BACKUP_TS" ]; then
+    sudo cp -a "/etc/sddm.conf.d/99-hyprsimple-theme.conf.bak.$BACKUP_TS" /etc/sddm.conf.d/99-hyprsimple-theme.conf
+fi
+```
+
+After verifying the rollback, use the saved state file to restore only the states that were previously present:
+
+```bash
+# Example: run each line only if the saved state matches.
+systemctl --user start sddm-theme-sync.path             # saved ActiveState=active
+sudo systemctl enable "sddm-theme-sync@$USER.service"   # saved UnitFileState=enabled
+```
+
+If the saved `ActiveState` was `inactive`, do not start the path unit. If the saved `UnitFileState` was anything other than `enabled` (for example `disabled` or `static`), do not enable the boot-time instance. Keeping synchronization disabled is an intentional option if the rollback was needed because sync was overwriting files or failing; re-enable only after the cause is fixed.
+
+- If a backup does not exist, that item did not exist before installation. For the theme directory, remove only `/usr/share/sddm/themes/hyprsimple` if you want to undo the installation. For the drop-in, remove only `/etc/sddm.conf.d/99-hyprsimple-theme.conf`. Do not delete other files or drop-ins from `/etc/sddm.conf.d/`.
+- The rollback `mv` preserves the replaced theme directory as `hyprsimple.replaced.<timestamp>` instead of deleting it; remove it manually only after confirming the rollback is correct.
+- Recovery commands may require a TTY or another safe administrative environment (for example, a virtual console or an SSH session). Do not restart SDDM from an active graphical session as a casual recovery step; the restored theme takes effect on the next normal SDDM start or reboot.
+- Keep the saved unit-state file until the rollback is verified, then restore only the previously recorded states.
 
 ## Updating Hyprsimple
 
