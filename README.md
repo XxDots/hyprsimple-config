@@ -9,7 +9,26 @@ This repository contains a personal backup of Hyprsimple configuration files and
 - **Upstream commit:** `0bac6fd` (Bump to 0.4.11 #243)
 - **Installation path:** `~/.local/share/hyprsimple` (managed by `hyprsimple-update`)
 
-This backup contains only user-owned configuration overrides and custom scripts. Upstream-managed files are deliberately excluded because they are delivered by `hyprsimple-update` on every run.
+This backup contains configuration overrides and custom scripts, together with third-party material derived from upstream Hyprsimple and the SDDM elarun theme. Upstream-managed files are deliberately excluded because they are delivered by `hyprsimple-update` on every run. Third-party material is not covered by this repository's MIT license; see LICENSE and THIRD-PARTY-NOTICES.md.
+
+## Licensing
+
+This repository is distributed under the MIT License (see `LICENSE`). The MIT
+license applies **only to original project content authored by Oreo**. It does
+not override third-party licenses or exclusions, and it does not imply that
+every file in this repository can be freely relicensed.
+
+Third-party material is documented in `THIRD-PARTY-NOTICES.md`, including:
+
+- Upstream Hyprsimple (`rizukirr/hyprsimple`, v0.4.11): README-declared MIT;
+  no upstream LICENSE file or copyright notice was found at the pinned commit.
+- SDDM elarun theme: MIT, Copyright (c) 2013 Reza Fatahilah Shah and
+  Abdurrahman AVCI; the original MIT header is restored in `sddm/Main.qml`.
+- `hypr/themes/japanese-crimson/backgrounds/1-japanese-crimson.jpg`: unknown
+  provenance; excluded from the MIT license grant.
+- Hyprsimple wallpapers (`1-rainy-workspace.jpg`, `2-neon-cafe-street.jpg`,
+  `3-hyprsimple-cafe.jpg`, `sddm/background.jpg`): sourced from upstream;
+  artwork rights and the upstream copyright notice remain unverified.
 
 ## Directory Mapping
 
@@ -30,7 +49,9 @@ This backup contains only user-owned configuration overrides and custom scripts.
 
 ## Personal Customizations
 
-The following files are personal overrides that differ from upstream defaults:
+The following files are customizations and overrides. Some may match upstream
+defaults byte-for-byte and are not claimed as original project work; see
+THIRD-PARTY-NOTICES.md for third-party material.
 
 - `hypr/hyprland.lua` — Entry point loading upstream + user overrides
 - `hypr/vars.lua` — Empty override (uses all upstream defaults)
@@ -47,8 +68,8 @@ The following files are personal overrides that differ from upstream defaults:
 - `hypr/xdph.conf` — Sources upstream xdph config
 - `hypr/theme-hyprlock.conf` — Generated lockscreen colors (regenerated on theme switch)
 - `hypr/themes/hyprsimple/colors.toml` — Custom Catppuccin-like palette
-- `hypr/themes/hyprsimple/icon-theme` — `Papirus-Dark`
-- `hypr/themes/hyprsimple/backgrounds/` — 3 personal wallpapers
+- `hypr/themes/hyprsimple/icon-theme` — `Yaru-purple`
+- `hypr/themes/hyprsimple/backgrounds/` — 3 wallpapers sourced from upstream Hyprsimple (not personal artwork; see THIRD-PARTY-NOTICES.md)
 - `waybar/config.jsonc` — Custom bar layout with fuzzel launcher
 - `waybar/style.css` — Catppuccin Mocha theme
 - `ghostty/config` — Font, opacity, keybinds (theme colors rewritten on switch)
@@ -56,7 +77,7 @@ The following files are personal overrides that differ from upstream defaults:
 - `uwsm/env` — Wayland env vars, cursor size
 - `hyprsimple/plugins.json` — Muslimtify plugin enabled
 - `starship.toml` — Catppuccin Mocha palette, extensive modules
-- `scripts/*` — 10 non-backup scripts (clipboard, power menu, waybar toggle, wallpaper, search, CPU toggle, SDDM sync)
+- `scripts/*` — 10 original project scripts (hypr-clipboard, hypr-clipboard-monitor, hypr-clipboard-paste, hypr-power-menu, hypr-toggle-waybar, hypr-wallpaper, search.sh, search_by_keyword.sh, toggle_cpu_mode.sh, sddm-theme-sync.sh). None are derived from upstream Hyprsimple; sddm-theme-sync.sh embeds the third-party SDDM elarun QML template (MIT; see THIRD-PARTY-NOTICES.md).
 
 ### SDDM Dynamic Theme
 

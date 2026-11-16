@@ -1,4 +1,31 @@
 /***************************************************************************
+ * SDDM elarun theme
+ * Original theme: SDDM elarun
+ * Source: SDDM v0.21.0 data/themes/elarun/Main.qml
+ *
+ * Copyright (c) 2013 Reza Fatahilah Shah
+ * Copyright (c) 2013 Abdurrahman AVCI
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ ***************************************************************************/
+
+/***************************************************************************
  * Hyprsimple SDDM Dynamic Theme
  * Asymmetric layout: login panel left, wallpaper right
  * Colors and wallpaper synchronized from active Hyprsimple theme
