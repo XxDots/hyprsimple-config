@@ -12,6 +12,7 @@
 *.log
 *.tmp
 *.bak
+*.bak2
 *.backup
 
 # Generated theme files
