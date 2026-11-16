@@ -75,9 +75,8 @@ THIRD-PARTY-NOTICES.md for third-party material.
 - `ghostty/config` — Font, opacity, keybinds (theme colors rewritten on switch)
 - `btop/btop.conf` — Minimal, references generated theme
 - `uwsm/env` — Wayland env vars, cursor size
-- `hyprsimple/plugins.json` — Muslimtify plugin enabled
 - `starship.toml` — Catppuccin Mocha palette, extensive modules
-- `scripts/*` — 10 original project scripts (hypr-clipboard, hypr-clipboard-monitor, hypr-clipboard-paste, hypr-power-menu, hypr-toggle-waybar, hypr-wallpaper, search.sh, search_by_keyword.sh, toggle_cpu_mode.sh, sddm-theme-sync.sh). None are derived from upstream Hyprsimple; sddm-theme-sync.sh embeds the third-party SDDM elarun QML template (MIT; see THIRD-PARTY-NOTICES.md).
+- `scripts/*` — 8 original project scripts (hypr-clipboard, hypr-clipboard-monitor, hypr-clipboard-paste, hypr-power-menu, search.sh, search_by_keyword.sh, toggle_cpu_mode.sh, sddm-theme-sync.sh). None are derived from upstream Hyprsimple; sddm-theme-sync.sh embeds the third-party SDDM elarun QML template (MIT; see THIRD-PARTY-NOTICES.md).
 
 ### SDDM Dynamic Theme
 
@@ -247,12 +246,7 @@ Standard base-system utilities such as `getent`, `stat`, `mktemp`, `sed`, `chmod
    sudo /usr/local/bin/sddm-theme-sync
    ```
 
-6. **Enable Muslimtify plugin** (if desired):
-   ```bash
-   hyprsimple-plugin enable muslimtify
-   ```
-
-7. **Reload Hyprland:**
+6. **Reload Hyprland:**
    ```bash
    hyprctl reload
    ```
@@ -260,7 +254,6 @@ Standard base-system utilities such as `getent`, `stat`, `mktemp`, `sed`, `chmod
 ## Restore Notes
 
 - `hypr/hyprpaper.conf` references `$HOME/.cache/current_wallpaper`. Verify the path matches your `$HOME` after restore. The `theme-switcher.sh` will update this when a theme is applied.
-- The `muslimtify` plugin stores location data in `~/.config/muslimtify/config.json` (excluded from this backup). Reconfigure location after restore if using the plugin.
 - Do NOT clone this repository into `~/.local/share/hyprsimple`. Keep upstream and personal config separate.
 - SDDM theme requires root to install to `/usr/share/sddm/themes/`. The config drop-in goes to `/etc/sddm.conf.d/`.
 - A logout or reboot is required to see the new SDDM login screen.
